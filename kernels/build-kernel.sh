@@ -1,6 +1,6 @@
 #!/bin/bash
 
-nvcc kernels.cu \
+nvcc daxpy_kernel.cu \
     --fatbin \
     -gencode arch=compute_80,code=sm_80 \
     -gencode arch=compute_86,code=sm_86 \
