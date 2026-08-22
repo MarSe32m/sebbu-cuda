@@ -46,6 +46,24 @@ extension CUDA {
 }
 
 extension CUDA.Context {
+    /// Loads a CUDA module from a file.
+    ///
+    /// The path may refer to a PTX, cubin, or fatbin file. Relative paths are
+    /// resolved from the process's current working directory by the CUDA
+    /// driver.
+    public func loadModule(atPath path: String) throws -> CUDA.Module {
+        var rawModule: CUmodule?
+        try withCurrent {
+            try path.withCString { path in
+                try cudaCheck(cuModuleLoad(&rawModule, path))
+            }
+        }
+        guard let rawModule else {
+            throw CUDA.ValidationError.missingHandle(resource: "module")
+        }
+        return CUDA.Module(rawValue: rawModule, context: self)
+    }
+
     /// Loads a PTX or binary module image from memory.
     ///
     /// CUDA consumes the image during this call; the input buffer does not need

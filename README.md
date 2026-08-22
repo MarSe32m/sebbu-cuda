@@ -70,6 +70,22 @@ try context.withCurrent {
 }
 ```
 
+### Loading modules from files
+
+`loadModule(atPath:)` delegates file loading to the CUDA Driver API and accepts
+PTX, cubin, and fatbin files:
+
+```swift
+let ptxModule = try context.loadModule(atPath: "/path/to/kernels.ptx")
+let fatbinModule = try context.loadModule(atPath: "/path/to/kernels.fatbin")
+
+let kernel = try fatbinModule.kernel(named: "saxpy")
+```
+
+Relative paths are resolved from the process's current working directory. PTX
+is JIT-compiled by the installed NVIDIA driver, while a fatbin can contain code
+for multiple GPU architectures.
+
 `Device`, `DevicePointer`, `Dim3`, versions and compute capabilities are
 copyable values. `Context` and `Module` are reference-counted owners.
 `Stream`, `Event`, `DeviceBuffer`, `DeviceMemory` and `PinnedBuffer` are

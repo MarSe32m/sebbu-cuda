@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Sebastian Toivonen
 // SPDX-License-Identifier: Apache-2.0
 
+import Foundation
 import XCTest
 @testable import SebbuCUDA
 
@@ -97,6 +98,28 @@ final class CUDAIntegrationTests: XCTestCase {
         }
         kernel = nil
         XCTAssertNil(weakModule)
+    }
+
+    func testLoadModuleFromPTXFile() throws {
+        let context = try cudaDeviceOrSkip().makeContext()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "sebbu-cuda-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let ptxFile = directory.appendingPathComponent("saxpy.ptx")
+        try testSAXPYPTX.write(to: ptxFile, atomically: true, encoding: .utf8)
+
+        let module = try context.loadModule(atPath: ptxFile.path)
+        _ = try module.kernel(named: "saxpy")
     }
 
     func testPinnedCopyOwnerIsRetainedUntilSynchronization() throws {
