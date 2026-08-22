@@ -72,8 +72,8 @@ try context.withCurrent {
 
 `Device`, `DevicePointer`, `Dim3`, versions and compute capabilities are
 copyable values. `Context` and `Module` are reference-counted owners.
-`Stream`, `Event`, `DeviceBuffer`, `DeviceMemory`, and `PinnedBuffer` are
-noncopyable resource values. Children retain their parents and streams retain
+`Stream`, `Event`, `DeviceBuffer`, `DeviceMemory` and `PinnedBuffer` are
+noncopyable resource values. Children retain their parents, and streams retain
 the memory/module owners required by in-flight asynchronous work.
 
 Zero-sized allocations are valid and use address zero without calling CUDA.
@@ -100,3 +100,17 @@ those prerequisites are missing.
 cuBLAS, cuFFT, cuSPARSE, NVRTC, graphs, virtual memory, peer access, and managed
 memory are intentionally outside this first milestone. Future sibling targets
 can use package-level opaque handles without exposing `CCUDA` to clients.
+
+## License and NVIDIA software
+
+`sebbu-cuda` is licensed under the [Apache License 2.0](LICENSE). This license
+applies only to this package's own source code.
+
+The NVIDIA CUDA Toolkit, CUDA headers, CUDA driver and associated libraries
+are not included with `sebbu-cuda` and must be installed separately. They
+remain subject to NVIDIA's own license terms, including the
+[NVIDIA Software Development Kit License Agreement](https://docs.nvidia.com/cuda/eula/index.html).
+
+NVIDIA and CUDA are trademarks or registered trademarks of NVIDIA Corporation.
+This project is independently developed and is not affiliated with or endorsed
+by NVIDIA.
