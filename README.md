@@ -70,10 +70,10 @@ try context.withCurrent {
 }
 ```
 
-`Device`, `DevicePointer`, `Dim3`, versions, and compute capabilities are
+`Device`, `DevicePointer`, `Dim3`, versions and compute capabilities are
 copyable values. `Context` and `Module` are reference-counted owners.
 `Stream`, `Event`, `DeviceBuffer`, `DeviceMemory`, and `PinnedBuffer` are
-noncopyable resource values. Children retain their parents, and streams retain
+noncopyable resource values. Children retain their parents and streams retain
 the memory/module owners required by in-flight asynchronous work.
 
 Zero-sized allocations are valid and use address zero without calling CUDA.

@@ -67,6 +67,7 @@ let cudaSwiftSettings: [SwiftSetting] = [
 let cudaLinkerSettings: [LinkerSetting] = [
     .unsafeFlags(cudaLinkerFlags),
     .linkedLibrary("cuda"),
+    .linkedLibrary("m", .when(platforms: [.linux]))
 ]
 
 let package = Package(

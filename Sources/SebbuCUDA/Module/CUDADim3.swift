@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 extension CUDA {
     /// Three-dimensional CUDA grid or block dimensions.
     public struct Dim3: Sendable, Hashable {

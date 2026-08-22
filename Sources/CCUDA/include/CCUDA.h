@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef SEBBU_CCUDA_H
 #define SEBBU_CCUDA_H
 

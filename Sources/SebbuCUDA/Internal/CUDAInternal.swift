@@ -1,20 +1,23 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 internal import CCUDA
 
-@inline(__always)
+@inline(always)
 internal func cudaEnsureInitialized() throws {
     // cuInit(0) is explicitly safe to call more than once. Calling it at each
     // high-level entry point avoids global mutable initialization state.
     try cudaCheck(cuInit(0))
 }
 
-@inline(__always)
+@inline(always)
 internal func cudaCheck(_ result: CUresult) throws {
     guard result == CUDA_SUCCESS else {
         throw CUDA.Error(result)
     }
 }
 
-@inline(__always)
+@inline(always)
 internal func cudaCleanupCheck(
     _ result: CUresult,
     operation: StaticString = #function
@@ -26,7 +29,7 @@ internal func cudaCleanupCheck(
     }
 }
 
-@inline(__always)
+@inline(always)
 internal func cudaRequireSameContext(
     _ lhs: CUDA.Context,
     _ rhs: CUDA.Context
@@ -36,7 +39,7 @@ internal func cudaRequireSameContext(
     }
 }
 
-@inline(__always)
+@inline(always)
 internal func cudaCheckedByteCount(
     count: Int,
     stride: Int

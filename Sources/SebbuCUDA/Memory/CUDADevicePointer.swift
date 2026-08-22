@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 extension CUDA {
     /// A non-owning, typed address in CUDA device memory.
     public struct DevicePointer<Pointee>: Sendable, Hashable {

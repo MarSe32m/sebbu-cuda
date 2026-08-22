@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 internal final class CUDAKernelArgumentStorage {
     private var allocations: [UnsafeMutableRawPointer] = []
 

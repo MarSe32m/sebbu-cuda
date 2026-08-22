@@ -44,7 +44,7 @@ DONE:
 
 @main
 enum Development {
-    static func main() throws {
+    static func test() throws {
         try CUDA.initialize()
 
         let device = try CUDA.Device(ordinal: 0)
@@ -97,6 +97,13 @@ enum Development {
 
             print("SAXPY verified for \(n) elements")
             print("Kernel duration: \(try end.elapsedTime(since: start))")
+        }
+    }
+    static func main() throws {
+        do {
+            try test()
+        } catch {
+            print("Test failed with error:", error)
         }
     }
 }

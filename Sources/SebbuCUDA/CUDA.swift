@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Sebastian Toivonen
+// SPDX-License-Identifier: Apache-2.0
+
 internal import CCUDA
 
 /// A namespace for the Swift CUDA Driver API wrapper.
