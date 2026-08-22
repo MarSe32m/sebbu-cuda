@@ -20,8 +20,14 @@ guard let cudaRoot = environment["CUDA_PATH"], !cudaRoot.isEmpty else {
     )
 }
 #else
-let cudaRoot = environment["CUDA_PATH"].flatMap { $0.isEmpty ? nil : $0 }
-    ?? "/usr/local/cuda"
+// Prefer CUDA_PATH. On some platforms, CUDA_HOME is defined instead. In most cases cuda is found in /usr/local/cuda
+let cudaRoot = if let cuda_path = environment["CUDA_PATH"], !cuda_path.isEmpty {
+    cuda_path
+} else if let cuda_home = environment["CUDA_HOME"], !cuda_home.isEmpty {
+    cuda_home
+} else {
+    "/usr/local/cuda"
+}
 #endif
 
 let cudaIncludePath = appending("include", to: cudaRoot)
