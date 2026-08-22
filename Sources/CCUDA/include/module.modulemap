@@ -1,0 +1,5 @@
+module CCUDA [system] {
+    header "CCUDA.h"
+    link "cuda"
+    export *
+}

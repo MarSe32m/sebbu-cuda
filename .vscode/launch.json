@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:sebbu-cuda}",
+            "name": "Debug sebbu-cuda-development",
+            "target": "sebbu-cuda-development",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug sebbu-cuda-development"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:sebbu-cuda}",
+            "name": "Release sebbu-cuda-development",
+            "target": "sebbu-cuda-development",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release sebbu-cuda-development"
+        }
+    ]
+}
