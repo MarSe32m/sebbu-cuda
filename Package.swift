@@ -19,7 +19,7 @@ guard let cudaRoot = environment["CUDA_PATH"], !cudaRoot.isEmpty else {
         "root (for example C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.0)."
     )
 }
-#else
+#elseif os(Linux)
 // Prefer CUDA_PATH. On some platforms, CUDA_HOME is defined instead. In most cases cuda is found in /usr/local/cuda
 let cudaRoot = if let cuda_path = environment["CUDA_PATH"], !cuda_path.isEmpty {
     cuda_path
@@ -28,17 +28,21 @@ let cudaRoot = if let cuda_path = environment["CUDA_PATH"], !cuda_path.isEmpty {
 } else {
     "/usr/local/cuda"
 }
+#else
+let cudaRoot = ""
 #endif
 
 let cudaIncludePath = appending("include", to: cudaRoot)
 let cudaHeaderPath = appending("cuda.h", to: cudaIncludePath)
 
+#if os(Windows) || os(Linux)
 guard FileManager.default.fileExists(atPath: cudaHeaderPath) else {
     fatalError(
         "sebbu-cuda could not find cuda.h at \(cudaHeaderPath). " +
         "Install the CUDA Toolkit or set CUDA_PATH to its root."
     )
 }
+#endif
 
 var cudaLinkerFlags: [String] = []
 
@@ -52,7 +56,7 @@ guard FileManager.default.fileExists(atPath: cudaImportLibrary) else {
     )
 }
 cudaLinkerFlags = ["-L", cudaLibraryPath]
-#else
+#elseif os(Linux)
 // Normally the NVIDIA driver installation supplies libcuda through the
 // system linker's search path. CUDA_LIBRARY_PATH is an explicit escape hatch
 // for toolkit stubs, cross-compilation sysroots, and unusual installations.
@@ -60,6 +64,8 @@ if let cudaLibraryPath = environment["CUDA_LIBRARY_PATH"],
    !cudaLibraryPath.isEmpty {
     cudaLinkerFlags = ["-L", cudaLibraryPath]
 }
+#else
+let cudaLibraryPath = ""
 #endif
 
 let cudaCSettings: [CSetting] = [
