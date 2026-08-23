@@ -197,7 +197,7 @@ jobs:
 
       - name: Build tests without running them (release, Windows CUDA)
         if: ${{ matrix.cuda && runner.os == 'Windows' }}
-        run: swift build --scratch-path .build/release -c release --build-tests
+        run: swift build --scratch-path .build/release -c release --build-tests -Xswiftc -enable-testing
 
   static-linux:
     name: Static Linux (${{ matrix.sdk }}, no CUDA)
