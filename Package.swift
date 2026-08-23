@@ -4,6 +4,7 @@ import Foundation
 import PackageDescription
 
 let environment = ProcessInfo.processInfo.environment
+let fileManager = FileManager.default
 
 func appending(_ component: String, to root: String) -> String {
     if root.hasSuffix("/") || root.hasSuffix("\\") {
@@ -13,85 +14,70 @@ func appending(_ component: String, to root: String) -> String {
 }
 
 #if os(Windows)
-guard let cudaRoot = environment["CUDA_PATH"], !cudaRoot.isEmpty else {
-    fatalError(
-        "sebbu-cuda requires the CUDA Toolkit. Set CUDA_PATH to the toolkit " +
-        "root (for example C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.0)."
-    )
-}
+let cudaRoot = environment["CUDA_PATH"].flatMap { $0.isEmpty ? nil : $0 } ?? ""
 #elseif os(Linux)
-// Prefer CUDA_PATH. On some platforms, CUDA_HOME is defined instead. In most cases cuda is found in /usr/local/cuda
-let cudaRoot = if let cuda_path = environment["CUDA_PATH"], !cuda_path.isEmpty {
-    cuda_path
-} else if let cuda_home = environment["CUDA_HOME"], !cuda_home.isEmpty {
-    cuda_home
-} else {
-    "/usr/local/cuda"
-}
+let cudaRoot = environment["CUDA_PATH"].flatMap { $0.isEmpty ? nil : $0 }
+    ?? environment["CUDA_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+    ?? "/usr/local/cuda"
 #else
 let cudaRoot = ""
 #endif
 
-let cudaIncludePath = appending("include", to: cudaRoot)
-let cudaHeaderPath = appending("cuda.h", to: cudaIncludePath)
-
-#if os(Windows) || os(Linux)
-guard FileManager.default.fileExists(atPath: cudaHeaderPath) else {
-    fatalError(
-        "sebbu-cuda could not find cuda.h at \(cudaHeaderPath). " +
-        "Install the CUDA Toolkit or set CUDA_PATH to its root."
-    )
-}
-#endif
+let cudaIncludePath = cudaRoot.isEmpty ? "" : appending("include", to: cudaRoot)
+let cudaHeaderPath = cudaIncludePath.isEmpty
+    ? ""
+    : appending("cuda.h", to: cudaIncludePath)
+let hasCUDAHeader = !cudaHeaderPath.isEmpty
+    && fileManager.fileExists(atPath: cudaHeaderPath)
 
 var cudaLinkerFlags: [String] = []
+let canBuildCUDA: Bool
 
-#if os(Windows)
+#if os(Windows) && arch(x86_64)
 let cudaLibraryPath = appending("lib/x64", to: cudaRoot)
 let cudaImportLibrary = appending("cuda.lib", to: cudaLibraryPath)
-guard FileManager.default.fileExists(atPath: cudaImportLibrary) else {
-    fatalError(
-        "sebbu-cuda could not find the CUDA Driver import library at " +
-        "\(cudaImportLibrary). Check CUDA_PATH and the toolkit installation."
-    )
+let hasCUDAImportLibrary = !cudaRoot.isEmpty
+    && fileManager.fileExists(atPath: cudaImportLibrary)
+canBuildCUDA = hasCUDAHeader && hasCUDAImportLibrary
+if canBuildCUDA {
+    cudaLinkerFlags = ["-L", cudaLibraryPath]
 }
-cudaLinkerFlags = ["-L", cudaLibraryPath]
 #elseif os(Linux)
-// Normally the NVIDIA driver installation supplies libcuda through the
-// system linker's search path. CUDA_LIBRARY_PATH is an explicit escape hatch
-// for toolkit stubs, cross-compilation sysroots, and unusual installations.
-if let cudaLibraryPath = environment["CUDA_LIBRARY_PATH"],
+canBuildCUDA = hasCUDAHeader
+if canBuildCUDA,
+   let cudaLibraryPath = environment["CUDA_LIBRARY_PATH"],
    !cudaLibraryPath.isEmpty {
     cudaLinkerFlags = ["-L", cudaLibraryPath]
 }
 #else
-let cudaLibraryPath = ""
+canBuildCUDA = false
 #endif
 
-let cudaCSettings: [CSetting] = [
-    .unsafeFlags(["-isystem", cudaIncludePath]),
+var products: [Product] = [
+    .library(name: "SebbuCUDA", targets: ["SebbuCUDA"]),
 ]
+var targets: [Target]
 
-let cudaSwiftSettings: [SwiftSetting] = [
-    .unsafeFlags(["-Xcc", "-isystem", "-Xcc", cudaIncludePath]),
-]
+if canBuildCUDA {
+    let cudaCSettings: [CSetting] = [
+        .unsafeFlags(["-isystem", cudaIncludePath]),
+    ]
+    let cudaSwiftSettings: [SwiftSetting] = [
+        .unsafeFlags(["-Xcc", "-isystem", "-Xcc", cudaIncludePath]),
+    ]
+    let cudaLinkerSettings: [LinkerSetting] = [
+        .unsafeFlags(cudaLinkerFlags),
+        .linkedLibrary("cuda"),
+        .linkedLibrary("m", .when(platforms: [.linux])),
+    ]
 
-let cudaLinkerSettings: [LinkerSetting] = [
-    .unsafeFlags(cudaLinkerFlags),
-    .linkedLibrary("cuda"),
-    .linkedLibrary("m", .when(platforms: [.linux]))
-]
-
-let package = Package(
-    name: "sebbu-cuda",
-    products: [
-        .library(name: "SebbuCUDA", targets: ["SebbuCUDA"]),
+    products.append(
         .executable(
             name: "sebbu-cuda-development",
             targets: ["Development"]
-        ),
-    ],
-    targets: [
+        )
+    )
+    targets = [
         .target(
             name: "CCUDA",
             path: "Sources/CCUDA",
@@ -120,6 +106,24 @@ let package = Package(
             swiftSettings: cudaSwiftSettings,
             linkerSettings: cudaLinkerSettings
         ),
-    ],
+    ]
+} else {
+    targets = [
+        .target(
+            name: "SebbuCUDA",
+            path: "Sources/SebbuCUDAUnavailable"
+        ),
+        .testTarget(
+            name: "SebbuCUDAUnavailableTests",
+            dependencies: ["SebbuCUDA"],
+            path: "Tests/SebbuCUDAUnavailableTests"
+        ),
+    ]
+}
+
+let package = Package(
+    name: "sebbu-cuda",
+    products: products,
+    targets: targets,
     swiftLanguageModes: [.v6]
 )
