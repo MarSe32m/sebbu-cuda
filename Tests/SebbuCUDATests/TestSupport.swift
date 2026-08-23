@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import XCTest
-@testable import SebbuCUDA
+import SebbuCUDA
 
 let testSAXPYPTX = #"""
 .version 6.4

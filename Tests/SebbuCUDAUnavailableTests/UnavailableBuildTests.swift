@@ -6,6 +6,6 @@ import SebbuCUDA
 
 final class UnavailableBuildTests {
     @Test func testPlaceholderModuleCanBeImported() {
-        #expect(true)
+        #expect(Bool(true))
     }
 }
