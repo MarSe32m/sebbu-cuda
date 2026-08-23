@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Sebastian Toivonen
 // SPDX-License-Identifier: Apache-2.0
 
+#define SEBBU_CCUDA_USE_TOOLKIT_HEADER 1
 #include "CCUDA.h"
 
 CUresult sebbuCuCtxCreate(
@@ -86,8 +87,8 @@ CUresult sebbuCuMemcpyDtoHAsync(
 }
 
 CUresult sebbuCuEventElapsedTime(
-    float *pMilliseconds, 
-    CUevent hStart, 
+    float *pMilliseconds,
+    CUevent hStart,
     CUevent hEnd
 ) {
     return cuEventElapsedTime(pMilliseconds, hStart, hEnd);

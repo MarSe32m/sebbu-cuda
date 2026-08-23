@@ -58,7 +58,7 @@ jobs:
         with:
           cuda: ${{ env.CUDA_VERSION }}
           method: network
-          sub-packages: ${{ runner.os == 'Linux' && '["nvcc","driver-dev"]' || '["nvcc"]' }}
+          sub-packages: ${{ runner.os == 'Linux' && '["nvcc","cudart-dev","driver-dev"]' || '["nvcc","cudart"]' }}
           log-file-suffix: '${{ matrix.os }}-cuda-${{ matrix.cuda }}.txt'
 
       - name: Force CUDA-unavailable configuration
@@ -78,7 +78,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f "$CUDA_PATH/include/cuda.h"
+
+          cuda_header=""
+          for candidate in \
+            "$CUDA_PATH/include/cuda.h" \
+            "$CUDA_PATH/targets/x86_64-linux/include/cuda.h" \
+            "$CUDA_PATH/targets/sbsa-linux/include/cuda.h"
+          do
+            if [[ -f "$candidate" ]]; then
+              cuda_header="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$cuda_header" ]]; then
+            cuda_header="$(find "$CUDA_PATH" -type f -name cuda.h -print -quit)"
+          fi
+          if [[ -z "$cuda_header" ]]; then
+            echo "CUDA Driver API header was not installed." >&2
+            exit 1
+          fi
+
+          echo "CUDA_INCLUDE_PATH=$(dirname "$cuda_header")" >> "$GITHUB_ENV"
 
           stub_library=""
           for candidate in \
@@ -112,14 +133,24 @@ jobs:
         if: ${{ matrix.cuda && runner.os == 'Windows' }}
         shell: pwsh
         run: |
-          $header = Join-Path $env:CUDA_PATH 'include\cuda.h'
-          $importLibrary = Join-Path $env:CUDA_PATH 'lib\x64\cuda.lib'
-          if (-not (Test-Path $header)) {
-            throw "CUDA header not found at $header"
+          $header = Get-ChildItem -Path $env:CUDA_PATH -Filter cuda.h `
+            -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          $importLibrary = Get-ChildItem -Path $env:CUDA_PATH -Filter cuda.lib `
+            -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if ($null -eq $header) {
+            throw "CUDA header not found below $env:CUDA_PATH"
           }
-          if (-not (Test-Path $importLibrary)) {
-            throw "CUDA Driver import library not found at $importLibrary"
+          if ($null -eq $importLibrary) {
+            throw "CUDA Driver import library not found below $env:CUDA_PATH"
           }
+
+          "CUDA_INCLUDE_PATH=$($header.DirectoryName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_LIBRARY_PATH=$($importLibrary.DirectoryName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Show toolchain versions
         shell: bash
