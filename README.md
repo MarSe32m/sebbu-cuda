@@ -1,55 +1,170 @@
 # sebbu-cuda
 
-`sebbu-cuda` is a Swift-native, ownership-safe wrapper around the NVIDIA CUDA
-Driver API. The public product is `SebbuCUDA`; the raw `CCUDA` Clang module is
-an implementation detail.
+`sebbu-cuda` provides Swift-native, ownership-safe wrappers around NVIDIA CUDA
+components. Its public products are independent:
 
-The first milestone covers driver initialization, devices, contexts, streams,
+- `SebbuCUDA` wraps a focused subset of the CUDA Driver API.
+- `SebbuNVRTC` wraps the complete exported NVRTC C API through CUDA 13.3 and
+  links NVIDIA's shared NVRTC library.
+
+The raw `CCUDA` and `CNVRTC` Clang modules are implementation details. Neither
+appears in a client's public Swift API, and `SebbuNVRTC` does not depend on
+`CCUDA` or `SebbuCUDA`.
+
+The Driver milestone covers initialization, devices, contexts, streams,
 events, device and pinned memory, synchronous and asynchronous copies, module
-loading, kernel lookup, argument packing, and kernel launch. The core module
-does not import Foundation.
+loading, kernel lookup, argument packing, and kernel launch. The NVRTC product
+covers version and architecture queries, program and in-memory-header
+lifecycle, compilation and diagnostics, PTX, cubin, LTO IR, OptiX IR, CUDA Tile
+IR, lowered names, PCH management, cancellation callbacks, and bundled-header
+management.
 
-CUDA Driver entry points that `cuda.h` exposes through ABI-selection macros
-such as `cuMemAlloc -> cuMemAlloc_v2` are called through stable `sebbuCu...`
-functions in `CCUDA`. New macro-aliased Driver APIs should follow the same
-pattern rather than being referenced directly from Swift.
+Both Swift modules avoid Foundation.
 
 ## Requirements
 
-- Swift 6.4 or newer
-- Windows 10/11 x86-64 or Linux/WSL x86-64
-- CUDA Toolkit headers and Driver API link library
-- An NVIDIA driver and supported GPU to run CUDA work
+- Swift 6.2 or newer
+- Windows 10/11 x86-64 or a CUDA-supported Linux architecture
+- A CUDA Toolkit development installation
+- For `SebbuCUDA`, CUDA Driver headers and the Driver API import/stub library
+- For `SebbuNVRTC`, `nvrtc.h`, the NVRTC link library (`nvrtc.lib` on Windows
+  or `libnvrtc.so` on Linux), and the corresponding NVRTC runtime libraries
+- An NVIDIA driver and supported GPU only when running CUDA Driver work
+
+NVRTC itself can compile on a machine without a CUDA-capable GPU or installed
+NVIDIA driver.
 
 On Windows, set `CUDA_PATH` to the toolkit root. A standard NVIDIA installer
-normally sets it automatically:
+normally sets it automatically and adds its `bin` directory to `PATH`:
 
 ```powershell
-$env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0"
+$env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3"
+$env:PATH = "$env:CUDA_PATH\bin;$env:PATH"
 swift build
 ```
 
-On Linux and WSL, the manifest uses `CUDA_PATH` when present and otherwise
+On Linux and WSL, the manifest uses `CUDA_PATH`, then `CUDA_HOME`, and otherwise
 checks `/usr/local/cuda`:
 
 ```bash
 export CUDA_PATH=/usr/local/cuda
+export LD_LIBRARY_PATH="$CUDA_PATH/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 swift build
 ```
 
-The system linker normally finds `libcuda` from the NVIDIA driver. For an
-unusual sysroot or a toolkit stub directory, set `CUDA_LIBRARY_PATH` explicitly.
-The package never installs or bundles a Linux kernel driver.
+For a nonstandard layout, set these independently:
 
-At runtime, Windows machines need the NVIDIA-provided `nvcuda.dll`; Linux/WSL
-machines need the driver-provided `libcuda.so.1`. Applications do not ship
-these driver files. PTX module loading does not require the CUDA runtime DLL or
-`cudart` because this package uses the Driver API directly.
+- `CUDA_INCLUDE_PATH`: directory containing `cuda.h`
+- `CUDA_LIBRARY_PATH`: directory containing the Driver import/stub library
+- `NVRTC_INCLUDE_PATH`: directory containing `nvrtc.h`
+- `NVRTC_LIBRARY_PATH`: directory containing `nvrtc.lib` or `libnvrtc.so`
 
-## Usage
+When a component is unavailable, its public product remains importable as an
+unavailable placeholder. This keeps CUDA-free macOS, Windows ARM, and static
+Linux package graphs buildable.
 
-Add the package and depend on the `SebbuCUDA` product. Users import only the
-Swift module:
+## Runtime compilation
+
+Add the package and depend on the `SebbuNVRTC` product:
+
+```swift
+import SebbuNVRTC
+
+let source = #"""
+extern "C" __global__ void scale(float *values, float factor) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    values[index] *= factor;
+}
+"""#
+
+let ptx = try NVRTC.compile(
+    source,
+    architecture: .sm100,
+    options: [.cxxStandard(.cxx20), .fastMath, .lineInfo]
+)
+```
+
+The structured common-option model is also available:
+
+```swift
+var options = NVRTCCompileOptions(
+    architecture: .sm100,
+    cppStandard: .cxx20,
+    fastMath: true,
+    lineInfo: true,
+    includePaths: ["/path/to/include"],
+    defines: ["BLOCK_SIZE": "256", "ENABLE_FEATURE": nil]
+)
+options.additionalOptions.append("--future-nvrtc-option")
+
+let ptx = try NVRTC.compile(source, options: options)
+```
+
+`CUDAArchitecture`, `CXXStandard`, `NVRTCCompileOption`, and
+`NVRTCCompileOptions` are aliases for their `NVRTC`-scoped counterparts. An
+architecture can be constructed from a future raw name or with
+`.compute(_:suffix:)` and `.sm(_:suffix:)`; clients are not limited to the
+convenience constants known by this release.
+
+### Advanced program API
+
+`Program` exposes the complete multi-step lifecycle:
+
+```swift
+let program = try NVRTC.Program(
+    source: #"""
+    #include "configuration.h"
+    template<typename T>
+    __global__ void templatedKernel(T *value) { *value += T(VALUE); }
+    """#,
+    name: "kernel.cu",
+    headers: [
+        .init(
+            source: "#define VALUE 42\n",
+            includeName: "configuration.h"
+        )
+    ]
+)
+
+try program.addNameExpression("templatedKernel<int>")
+try program.compile(options: [
+    .architecture(.sm100),
+    .cxxStandard(.cxx20),
+    .fastMath,
+])
+
+let ptx = try program.ptx()
+let cubin = try program.cubin()
+let diagnostics = try program.log()
+let loweredName = try program.loweredName(for: "templatedKernel<int>")
+```
+
+Compilation failures throw `NVRTC.CompilationError`, which includes both the
+forward-compatible NVRTC error code and the program's diagnostic log. Raw
+compiler arguments remain available with `.raw(...)`.
+
+The following output and management APIs are also exposed:
+
+- `cubin()`, `ltoIR()`, `optiXIR()`, and `tileIR()` return `[UInt8]`.
+- `setCancellationHandler(_:)` wraps `nvrtcSetFlowCallback` and retains its
+  Swift closure for the program lifetime.
+- `NVRTC.pchHeapSize`, `setPCHHeapSize(_:)`, `pchCreationStatus()`, and
+  `requiredPCHHeapSize()` cover the CUDA 12.8 PCH API.
+- `NVRTC.bundledHeadersInfo`, `installBundledHeaders(at:options:)`, and
+  `removeBundledHeaders(at:)` cover CUDA 13.3 bundled headers. Removal is the
+  native recursive operation and deletes every item in the supplied directory.
+- `NVRTC.features` reports which optional API groups were present in the
+  toolkit headers used to build the package. Calls absent from an older toolkit
+  throw `NVRTC.UnsupportedFeatureError`.
+
+The only documented NVRTC helper without a Swift wrapper is
+`nvrtcGetTypeName`. It is not an exported C ABI function: it is an opt-in,
+inline C++ host helper over `std::type_info` and `std::string`, and therefore has
+no generic Swift ABI counterpart. Every exported NVRTC C function is wrapped.
+
+## CUDA Driver usage
+
+Add the package and depend on the `SebbuCUDA` product:
 
 ```swift
 import SebbuCUDA
@@ -70,61 +185,57 @@ try context.withCurrent {
 }
 ```
 
-### Loading modules from files
+`loadModule(atPath:)` accepts PTX, cubin, and fatbin files. A PTX string from
+`SebbuNVRTC` can be passed directly to `context.loadModule(ptx:)` when an
+application depends on both products.
 
-`loadModule(atPath:)` delegates file loading to the CUDA Driver API and accepts
-PTX, cubin, and fatbin files:
+Relative module paths are resolved from the process's current working
+directory. PTX is JIT-compiled by the installed NVIDIA driver, while a fatbin
+can contain code for multiple GPU architectures.
 
-```swift
-let ptxModule = try context.loadModule(atPath: "/path/to/kernels.ptx")
-let fatbinModule = try context.loadModule(atPath: "/path/to/kernels.fatbin")
+CUDA Driver entry points that `cuda.h` exposes through ABI-selection macros,
+such as `cuMemAlloc -> cuMemAlloc_v2`, are called through stable `sebbuCu...`
+functions in `CCUDA`. New macro-aliased Driver APIs should follow the same
+pattern rather than being referenced directly from Swift.
 
-let kernel = try fatbinModule.kernel(named: "saxpy")
-```
-
-Relative paths are resolved from the process's current working directory. PTX
-is JIT-compiled by the installed NVIDIA driver, while a fatbin can contain code
-for multiple GPU architectures.
-
-`Device`, `DevicePointer`, `Dim3`, versions and compute capabilities are
-copyable values. `Context` and `Module` are reference-counted owners.
-`Stream`, `Event`, `DeviceBuffer`, `DeviceMemory` and `PinnedBuffer` are
-noncopyable resource values. Children retain their parents, and streams retain
-the memory/module owners required by in-flight asynchronous work.
+`Device`, `DevicePointer`, `Dim3`, versions, and compute capabilities are
+copyable values. `Context` and `Module` are reference-counted owners. `Stream`,
+`Event`, `DeviceBuffer`, `DeviceMemory`, and `PinnedBuffer` are noncopyable
+resource values. Children retain their parents, and streams retain the owners
+needed by in-flight asynchronous work.
 
 Zero-sized allocations are valid and use address zero without calling CUDA.
 Negative counts and byte-count overflow are rejected before entering the
 driver.
 
-## Development executable and tests
-
-The included executable JIT-loads a small PTX SAXPY kernel, launches it, checks
-the result and records event timing:
+## Development and tests
 
 ```bash
 swift run sebbu-cuda-development
 swift test
 ```
 
-Tests that require a CUDA device skip themselves when no usable driver/device
-is present. Manifest evaluation still requires the toolkit's `cuda.h` and a
-valid build-time Driver API link setup, and reports a focused diagnostic when
-those prerequisites are missing.
+NVRTC integration tests compile CUDA C++ without a GPU. Driver integration
+tests skip when no usable driver/device is present. CI builds debug and release
+configurations with CUDA 13.3 on Linux and Windows and also verifies CUDA-free
+native and static-Linux configurations.
 
-## Scope
+## NVRTC linkage and NVIDIA software
 
-cuBLAS, cuFFT, cuSPARSE, NVRTC, graphs, virtual memory, peer access, and managed
-memory are intentionally outside this first milestone. Future sibling targets
-can use package-level opaque handles without exposing `CCUDA` to clients.
-
-## License and NVIDIA software
+The package links `nvrtc.lib` on Windows and `libnvrtc.so` on Linux. The NVRTC
+and NVRTC-builtins DLLs/shared libraries must therefore be discoverable at
+runtime (normally through the standard CUDA Toolkit installation). The shared
+variant is required on Windows because the official Swift runtime uses the
+dynamic MSVC runtime (`/MD`), while NVIDIA's static NVRTC archive uses the
+incompatible static MSVC runtime (`/MT`). `SebbuCUDA` applications also use the
+driver-provided `nvcuda.dll` on Windows or `libcuda.so.1` on Linux.
 
 `sebbu-cuda` is licensed under the [Apache License 2.0](LICENSE). This license
-applies only to this package's own source code.
+applies only to this package's source code.
 
-The NVIDIA CUDA Toolkit, CUDA headers, CUDA driver and associated libraries
-are not included with `sebbu-cuda` and must be installed separately. They
-remain subject to NVIDIA's own license terms, including the
+The NVIDIA CUDA Toolkit, headers, libraries, driver, and associated
+software are not included and remain subject to NVIDIA's license terms,
+including the
 [NVIDIA Software Development Kit License Agreement](https://docs.nvidia.com/cuda/eula/index.html).
 
 NVIDIA and CUDA are trademarks or registered trademarks of NVIDIA Corporation.

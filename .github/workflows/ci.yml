@@ -58,7 +58,7 @@ jobs:
         with:
           cuda: ${{ env.CUDA_VERSION }}
           method: network
-          sub-packages: ${{ runner.os == 'Linux' && '["nvcc","cudart-dev","driver-dev"]' || '["nvcc","cudart"]' }}
+          sub-packages: ${{ runner.os == 'Linux' && '["nvcc","cudart-dev","driver-dev","nvrtc","nvrtc-dev"]' || '["nvcc","cudart","nvrtc","nvrtc_dev"]' }}
           log-file-suffix: '${{ matrix.os }}-cuda-${{ matrix.cuda }}.txt'
 
       - name: Force CUDA-unavailable configuration
@@ -68,7 +68,10 @@ jobs:
           missing_path="${RUNNER_TEMP}/sebbu-cuda-missing-toolkit"
           echo "CUDA_PATH=$missing_path" >> "$GITHUB_ENV"
           echo "CUDA_HOME=$missing_path" >> "$GITHUB_ENV"
+          echo "CUDA_INCLUDE_PATH=$missing_path" >> "$GITHUB_ENV"
           echo "CUDA_LIBRARY_PATH=$missing_path" >> "$GITHUB_ENV"
+          echo "NVRTC_INCLUDE_PATH=$missing_path" >> "$GITHUB_ENV"
+          echo "NVRTC_LIBRARY_PATH=$missing_path" >> "$GITHUB_ENV"
 
       # GitHub's Linux runners do not have an NVIDIA driver. The Toolkit's
       # Driver API stub is sufficient for linking; CUDA-dependent integration
@@ -121,13 +124,37 @@ jobs:
             exit 1
           fi
 
+          nvrtc_library=""
+          for candidate in \
+            "$CUDA_PATH/lib64/libnvrtc.so" \
+            "$CUDA_PATH/lib/libnvrtc.so" \
+            "$CUDA_PATH/targets/x86_64-linux/lib/libnvrtc.so" \
+            "$CUDA_PATH/targets/sbsa-linux/lib/libnvrtc.so"
+          do
+            if [[ -e "$candidate" ]]; then
+              nvrtc_library="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$nvrtc_library" ]]; then
+            nvrtc_library="$(find "$CUDA_PATH" -name libnvrtc.so -print -quit)"
+          fi
+          if [[ -z "$nvrtc_library" ]]; then
+            echo "NVRTC shared library was not installed." >&2
+            exit 1
+          fi
+
+          nvrtc_library_dir="$(dirname "$nvrtc_library")"
+
           runtime_stub_dir="$RUNNER_TEMP/sebbu-cuda-driver-stub"
           mkdir -p "$runtime_stub_dir"
           cp -L "$stub_library" "$runtime_stub_dir/libcuda.so"
           ln -sfn libcuda.so "$runtime_stub_dir/libcuda.so.1"
 
           echo "CUDA_LIBRARY_PATH=$runtime_stub_dir" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$runtime_stub_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          echo "NVRTC_LIBRARY_PATH=$nvrtc_library_dir" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$runtime_stub_dir:$nvrtc_library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Verify CUDA Toolkit layout (Windows)
         if: ${{ matrix.cuda && runner.os == 'Windows' }}
@@ -139,6 +166,9 @@ jobs:
           $importLibrary = Get-ChildItem -Path $env:CUDA_PATH -Filter cuda.lib `
             -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
+          $nvrtcImportLibrary = Get-ChildItem -Path $env:CUDA_PATH `
+            -Filter nvrtc.lib -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
 
           if ($null -eq $header) {
             throw "CUDA header not found below $env:CUDA_PATH"
@@ -146,10 +176,15 @@ jobs:
           if ($null -eq $importLibrary) {
             throw "CUDA Driver import library not found below $env:CUDA_PATH"
           }
+          if ($null -eq $nvrtcImportLibrary) {
+            throw "NVRTC import library not found below $env:CUDA_PATH"
+          }
 
           "CUDA_INCLUDE_PATH=$($header.DirectoryName)" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CUDA_LIBRARY_PATH=$($importLibrary.DirectoryName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVRTC_LIBRARY_PATH=$($nvrtcImportLibrary.DirectoryName)" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Show toolchain versions
@@ -166,12 +201,19 @@ jobs:
           swift package dump-package > package.json
           if [[ "${{ matrix.cuda }}" == "true" ]]; then
             grep -q '"CCUDA"' package.json
+            grep -q '"CNVRTC"' package.json
+            grep -q '"SebbuNVRTCTests"' package.json
           else
             if grep -q '"CCUDA"' package.json; then
               echo "CCUDA must not be selected without the CUDA Toolkit." >&2
               exit 1
             fi
+            if grep -q '"CNVRTC"' package.json; then
+              echo "CNVRTC must not be selected without the NVRTC development library." >&2
+              exit 1
+            fi
             grep -q '"SebbuCUDAUnavailableTests"' package.json
+            grep -q '"SebbuNVRTCUnavailableTests"' package.json
           fi
 
       - name: Build (debug)
@@ -205,7 +247,10 @@ jobs:
     env:
       CUDA_PATH: /__sebbu_cuda_toolkit_not_installed__
       CUDA_HOME: /__sebbu_cuda_toolkit_not_installed__
+      CUDA_INCLUDE_PATH: /__sebbu_cuda_toolkit_not_installed__
       CUDA_LIBRARY_PATH: /__sebbu_cuda_toolkit_not_installed__
+      NVRTC_INCLUDE_PATH: /__sebbu_cuda_toolkit_not_installed__
+      NVRTC_LIBRARY_PATH: /__sebbu_cuda_toolkit_not_installed__
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +279,12 @@ jobs:
             echo "Static Linux must use the CUDA-unavailable target." >&2
             exit 1
           fi
+          if grep -q '"CNVRTC"' package.json; then
+            echo "Static Linux must use the NVRTC-unavailable target." >&2
+            exit 1
+          fi
           grep -q '"SebbuCUDAUnavailableTests"' package.json
+          grep -q '"SebbuNVRTCUnavailableTests"' package.json
 
       - name: Build with Static Linux SDK (debug)
         run: >-
