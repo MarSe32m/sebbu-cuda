@@ -5,7 +5,6 @@ import PackageDescription
 
 let environment = ProcessInfo.processInfo.environment
 let fileManager = FileManager.default
-
 func environmentPath(_ name: String) -> String? {
     environment[name].flatMap { $0.isEmpty ? nil : $0 }
 }
@@ -21,6 +20,7 @@ func firstDirectory(
     containing files: [String],
     among candidates: [String]
 ) -> String? {
+    let fileManager = FileManager.default
     var visited: Set<String> = []
     for candidate in candidates where !candidate.isEmpty {
         guard visited.insert(candidate).inserted else { continue }
